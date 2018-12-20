@@ -3,7 +3,6 @@ https://github.com/MenaceSan/CodeCounter.git
 
 How big is your .cs code base?<br />
 How well commented is your code?<br />
-Count code size and number of comments in .NET .CS based projects.<br />
 
 This is a Windows app that inspects directories of .cs files and calculates some statistics.<br />
 There are other applications that do this sort of things but I found them overkill or dificult to use.
