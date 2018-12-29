@@ -207,26 +207,26 @@ This is a test of a multi line constant string.
         [Description("Number of dirs with files. Ignore empty dirs.")]
         public int NumberOfDirectories = 0;
         [Description("Number of (not empty) .cs files read")]
-        public int NumberOfFiles = 0;      
+        public int NumberOfFiles = 0;
         [Description("Number of total characters read")]
-        public long NumberOfChars = 0;      
+        public long NumberOfChars = 0;
 
         [Description("Number of syntax errors found in the files")]
         public int NumberOfErrors = 0;
 
         [Description("Total number of lines (Sum of next 6 stats)")]
-        public int NumberOfLines = 0;      
+        public int NumberOfLines = 0;
 
         [Description("Empty or Whitespace")]
         public int NumberOfLinesBlank = 0;
         [Description("Comments that are empty or multi line quotes")]
         public int NumberOfCommentBlank = 0;
         [Description("Comment lines that look like commented out code (or junk)")]
-        public int NumberOfCommentedOutCode = 0; 
+        public int NumberOfCommentedOutCode = 0;
         [Description("Comments that seem to contain text")]
         public int NumberOfCommentLines = 0;
         [Description("Lines that just have code")]
-        public int NumberOfLinesCode = 0; 
+        public int NumberOfLinesCode = 0;
         [Description("Lines that have code and comments")]
         public int NumberOfLinesCodeAndComment = 0;
 
@@ -242,6 +242,7 @@ This is a test of a multi line constant string.
         internal string RootDir;
         internal bool Verbose = true;         // Print the class/methods i find.
         internal bool MakeTree = false;
+
         internal long NumberOfCharsMsg = 0;      // NumberOfChars when i printed status last.
 
         public void DumpStats()
@@ -451,7 +452,7 @@ This is a test of a multi line constant string.
                 }
             }
 
-            if (lineState.LineNumber==0)
+            if (lineState.LineNumber == 0)
             {
                 // Empty files dont count.
                 NumberOfFiles--;
@@ -466,21 +467,25 @@ This is a test of a multi line constant string.
 
         public void ReadDir(string dirPath)
         {
-            // Recursive reader.
+            // Recursive dir reader.
 
-            var d = new DirectoryInfo(dirPath);//Assuming Test is your Folder
+            var d = new DirectoryInfo(dirPath);     //  Assuming Test is your Folder
 
             bool showDir = false;   // only show dir if it has files.
 
+            // deal with files first.
             int filesInDir = 0;
-            var Files = d.GetFiles("*.*"); //Getting all files
+            var Files = d.GetFiles("*.*");      // Getting all files
             foreach (FileInfo file in Files)
             {
+                if (file.Attributes.HasFlag(FileAttributes.Hidden) && file.Attributes.HasFlag(FileAttributes.System))   // e.g. Thumb.db
+                    continue;
+
                 string ext = Path.GetExtension(file.Name);
                 if (!_exts.Contains(ext))    // ignore this
                     continue;
 
-                if (Verbose && !showDir)
+                if (this.Verbose && !showDir)
                 {
                     Console.WriteLine($"{GetTree(0)}Dir: {dirPath.Substring(RootDir.Length)}");
                     showDir = true;
@@ -499,7 +504,7 @@ This is a test of a multi line constant string.
             var Dirs = d.GetDirectories();
             foreach (var dir in Dirs)
             {
-                if (_dirsEx.Contains(dir.Name))     // excluded
+                if (_dirsEx.Contains(dir.Name))     // excluded dir
                     continue;
                 if (dir.Name.StartsWith("."))       // hidden
                     continue;
@@ -525,7 +530,10 @@ This is a test of a multi line constant string.
             {
                 if (string.IsNullOrWhiteSpace(arg))
                     continue;
-                if (arg == "-help" || arg == "-?")
+
+                string argL = arg.ToLower();
+
+                if (argL == "-help" || argL == "-?")
                 {
                     Console.WriteLine("CodeCounter walks a directory of .cs sources and compiles some statistics.");
                     Console.WriteLine("Use: CodeCounter -flag directory");
@@ -534,22 +542,22 @@ This is a test of a multi line constant string.
                     Console.WriteLine("-verbose");
                     return;
                 }
-                if (arg == "-wait")
+                if (argL == "-wait")
                 {
                     waitOnDone = true;
                     continue;
                 }
-                if (arg == "-tree")
+                if (argL == "-tree")
                 {
                     stats.MakeTree = true;
                     continue;
                 }
-                if (arg == "-verbose")
+                if (argL == "-verbose")
                 {
                     stats.Verbose = true;
                     continue;
                 }
-                if (arg.StartsWith("-"))
+                if (argL.StartsWith("-"))
                 {
                     Console.WriteLine("Bad Arg");
                     return;
