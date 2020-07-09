@@ -86,6 +86,11 @@ namespace CodeCounter
             _con.WriteLine($"{nameof(NumberOfClassComments)} = {NumberOfClassComments}");
             _con.WriteLine($"{nameof(NumberOfMethods)} = {NumberOfMethods}");
             _con.WriteLine($"{nameof(NumberOfMethodComments)} = {NumberOfMethodComments}");
+
+            // Summary of percentages:
+            // Percent of classes
+            // Percent of methods
+
         }
 
         public static readonly string[] _exts = { ".cs" };     // what file types do we read?

@@ -99,8 +99,8 @@ namespace CodeCounter
             }
         }
 
-        const string kTestMultiLine = @"
-This is a test of a multi line constant string.
+        public const string kTestMultiLine = @"
+This is a test of a multi line constant string used for self testing.
 ";
 
         public string ReadLine(string line)
