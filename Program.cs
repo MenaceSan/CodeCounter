@@ -31,6 +31,7 @@ namespace CodeCounter
                     Console.WriteLine("Use: CodeCounter -flag directory");
                     Console.WriteLine("-verbose : show methods.");
                     Console.WriteLine("-tree : display methods and names as tree.");
+                    Console.WriteLine("-showmodules : list the modules.");
                     Console.WriteLine("-wait : pause at the end.");
                     return;
                 }
@@ -38,6 +39,12 @@ namespace CodeCounter
                 if (argL == "-wait")
                 {
                     waitOnDone = true;
+                    continue;
+                }
+
+                if (argL == "-showmodules")
+                {
+                    stats.ShowModules = true;
                     continue;
                 }
 
@@ -71,6 +78,11 @@ namespace CodeCounter
 
             stats.ReadDir(stats.RootDir);
             stats.DumpStats();
+
+            if (stats.ShowModules)
+            {
+                stats.NameSpaces.ShowModules(Console.Out);
+            }
 
             if (waitOnDone)
             {

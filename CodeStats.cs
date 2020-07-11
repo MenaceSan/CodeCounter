@@ -55,15 +55,16 @@ namespace CodeCounter
         private readonly TextWriter _con;            // Console for Verbose messages and errors.
 
         internal bool MakeTree = false;
+        internal bool ShowModules = false;
 
         internal long NumberOfCharsMsg = 0;      // NumberOfChars when i printed status last.
 
-        private readonly NameSpaces _NameSpaces;
+        internal readonly NameSpaces NameSpaces;
 
         public CodeStats(TextWriter con)
         {
             _con = con;
-            _NameSpaces = new NameSpaces(con);
+            NameSpaces = new NameSpaces();
         }
 
         public void DumpStats()
@@ -117,12 +118,12 @@ namespace CodeCounter
         /// </summary>
         /// <param name="filePath">The filename to count.</param>
         /// <returns>The number of lines in the file.</returns>  
-        private void ReadFile(string filePath, NameSpaceProject proj)
+        private void ReadFile(string filePath, ProjectReference proj)
         {
             if (filePath.EndsWith("AssemblyInfo.cs"))  // always ignore this file for comment counting purposes.
                 return;
 
-            if (Verbose)
+            if (Verbose || MakeTree)
             {
                 _con.WriteLine($"{GetTree(1)}File: {filePath.Substring(RootDir.Length)}");
             }
@@ -166,11 +167,11 @@ namespace CodeCounter
 
                     if (lineCode.StartsWith(NameSpaces.kUsingDecl))
                     {
-                        _NameSpaces.AddUsingDecl(proj, lineCode.Substring(NameSpaces.kUsingDecl.Length));
+                        NameSpaces.AddUsingDecl(proj, lineCode.Substring(NameSpaces.kUsingDecl.Length));
                     }
                     else if (lineCode.StartsWith(NameSpaces.kNameSpaceDecl))
                     {
-                        string err = _NameSpaces.AddNameSpaceDecl(proj, lineCode.Substring(NameSpaces.kNameSpaceDecl.Length));
+                        string err = NameSpaces.AddNameSpaceDecl(proj, lineCode.Substring(NameSpaces.kNameSpaceDecl.Length));
                         if (err != null)
                         {
                             _con.WriteLine($"Error: {err} at {filePath.Substring(RootDir.Length)}:{lineState.LineNumber}");
@@ -247,7 +248,7 @@ namespace CodeCounter
                             }
                             lineState.LastLineWasClass = true;
                             NumberOfClasses++;
-                            if (Verbose)
+                            if (Verbose || MakeTree)
                             {
                                 _con.WriteLine($"{GetTree(2)}Class: {lineCode}");
                             }
@@ -273,7 +274,7 @@ namespace CodeCounter
                             {
                                 lineState.LastLineWasMethod = true;
                                 NumberOfMethods++;
-                                if (Verbose)
+                                if (Verbose || MakeTree)
                                 {
                                     _con.WriteLine($"{GetTree(3)}Method: {lineCode}");
                                 }
@@ -307,14 +308,14 @@ namespace CodeCounter
             }
         }
 
-        public void ReadDir(string dirPath, NameSpaceProject proj = null)
+        public void ReadDir(string dirPath, ProjectReference proj = null)
         {
             // Recursive dir reader.
 
             var d = new DirectoryInfo(dirPath);     //  Assuming Test is your Folder
 
             bool showDir = false;   // only show dir if it has files.
-            NameSpaceProject projDef = null;      // only one per directory.
+            ProjectReference projDef = null;      // only one per directory.
 
             // deal with files first.
             // System.IO.IOException: 'The directory name is invalid.' = this was a file name not a dir name ?
@@ -333,7 +334,7 @@ namespace CodeCounter
                     if (projDef == null)
                     {
                         NumberOfProjects++;
-                        proj = projDef = _NameSpaces.AddProjectFile(dirPath, file.Name);
+                        proj = projDef = NameSpaces.AddProjectFile(dirPath, file.Name);
                     }
                     continue;
                 }
@@ -341,7 +342,7 @@ namespace CodeCounter
                 if (!_exts.Contains(ext))    // ignore this. assume lower case ??
                     continue;
 
-                if (this.Verbose && !showDir)
+                if ((this.Verbose || MakeTree ) && !showDir)
                 {
                     _con.WriteLine($"{GetTree(0)}Dir: {dirPath.Substring(RootDir.Length)}");
                     showDir = true;

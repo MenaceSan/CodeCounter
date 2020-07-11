@@ -1,15 +1,12 @@
-﻿using System;
-using System.Collections;
-using System.ComponentModel;
-using System.IO;
-using System.Linq;
+﻿using System.Collections;
 
 namespace CodeCounter
 {
+    /// <summary>
+    /// The state (of a line) inside a single .cs source file.
+    /// </summary>
     internal class LineState
     {
-        // The state (of a line) inside a single .cs source file.
-
         public int LineNumber = 0;      // 1 based.
         public bool LastLineWasClass = false;   // last line was a class.
         public bool LastLineWasMethod = false;   // last line was a method

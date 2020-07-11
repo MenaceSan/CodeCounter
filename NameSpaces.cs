@@ -1,119 +1,41 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 
 namespace CodeCounter
 {
-    public class NameSpaceProject
-    {
-        public string Name;         // Projects file name. from .csproj
-        public string DirBase;      // (lower case) Project owns all files under this directory. (except if claimed by a sub project. which is a bad idea but allow it)
-
-        // Declared refs vs used refs.
-        SortedList<string, string> DeclaredProjectDeps = new SortedList<string, string>();      // projects declared in .csproj file.
-        HashSet<NameSpaceLevel> NameSpacesUsed = new HashSet<NameSpaceLevel>();         // namespaces used that are not defined in my project.
-
-        public NameSpaceProject()
-        {
-        }
-
-        public void TrimNameSpacesUsed()
-        {
-            // remove used namespaces that i also declared
-            NameSpacesUsed.RemoveWhere(x => x.Project == this);
-        }
-
-        public void AddUsed(NameSpaceLevel level)
-        {
-            if (level == null)
-                return;
-            if (level.Project == this)  // dont bother recording a ref to something i declared
-                return;
-            NameSpacesUsed.Add(level);
-        }
-    }
-
-    public class NameSpaceLevel
-    {
-        // Define a level/segment of a namespace.
-        public readonly string Name;     // segment/level name.
-
-        public readonly NameSpaceLevel Parent;
-        private readonly SortedList<string, NameSpaceLevel> Children;
-
-        public NameSpaceProject Project;    // What project defines this. Should only be 1 !!
-
-        public NameSpaceLevel(string name, NameSpaceLevel parent)
-        {
-            Name = name;
-            Parent = parent;
-            Children = new SortedList<string, NameSpaceLevel>();
-        }
-
-        public string FullName
-        {
-            get
-            {
-                if (Parent == null)
-                    return Name;
-                // Trace its parent path. recursive.
-                return string.Concat(Parent.FullName, '.', Name);
-            }
-        }
-
-        public int LevelCount
-        {
-            get
-            {
-                int i = 0;
-                for (var p = Parent; p != null; i++)
-                {
-                    p = p.Parent;
-                }
-                return i;
-            }
-        }
-
-        public NameSpaceLevel FindPartialMatch(string[] names, int i = 1)
-        {
-            // Find Partial or full match.
-            if (i >= names.Length)
-                return this;    // full match.
-            NameSpaceLevel child;
-            if (!Children.TryGetValue(names[i], out child))
-                return this;    // maybe not a full match?
-            return child.FindPartialMatch(names, i + 1);
-        }
-
-        internal NameSpaceLevel AddChildren(string[] names, int levelCount)
-        {
-            if (levelCount >= names.Length)
-                return this;
-            var level = new NameSpaceLevel(names[levelCount], this);
-            Children.Add(level.Name, level);
-            return level.AddChildren(names, levelCount + 1);
-        }
-    }
-
     public class NameSpaces
     {
-        // track the namespaces and projects used.
+        // track ALL the namespaces and projects used.
         // Make sure namespaces are defined in just one project.
         // Track which projects use namespaces defined in other projects. build true dependency tree. 
         // Are all referenced projects actually used ?
 
-        private readonly TextWriter _con;            // Console for Verbose messages and errors.
-
         public const string kUsingDecl = "using ";
         public const string kNameSpaceDecl = "namespace ";
-
+        
         SortedList<string, NameSpaceLevel> RootNames = new SortedList<string, NameSpaceLevel>();      // 
-        SortedList<string, NameSpaceProject> Projects = new SortedList<string, NameSpaceProject>();      // 
+        SortedList<string, ProjectReference> Projects = new SortedList<string, ProjectReference>();      // flat list of all projects. // SortedList always lower case sorted.
+        SortedList<string, PackageReference> Packages = new SortedList<string, PackageReference>();
 
-        public NameSpaces(TextWriter con)
+        public NameSpaces()
         {
-            _con = con;
+        }
+
+        public void ShowModules(TextWriter con)
+        {
+            // dump format like : dependencies.webgraphviz.txt
+
+            con.WriteLine("Modules: paste below into http://www.webgraphviz.com/ or use http://www.graphviz.org/");
+
+            con.WriteLine("digraph prof { ratio = fill; node[style = filled]; ");
+
+            foreach (ProjectReference project in Projects.Values)
+            {
+                project.ShowModules(con);
+            }
+
+            con.WriteLine("}");
         }
 
         private NameSpaceLevel FindOrMakeName(string nameSpace)
@@ -154,13 +76,13 @@ namespace CodeCounter
         }
 
 
-        public void AddMethodCall(NameSpaceProject proj, string method)
+        public void AddMethodCall(ProjectReference proj, string method)
         {
             // We found a method call that has a namespace prefix.
 
         }
 
-        public void AddUsingDecl(NameSpaceProject proj, string nameSpace)
+        public void AddUsingDecl(ProjectReference proj, string nameSpace)
         {
             // We found a "using " line. record it as a reference.
 
@@ -170,7 +92,7 @@ namespace CodeCounter
             proj.AddUsed(FindOrMakeName(nameSpace));
         }
 
-        public string AddNameSpaceDecl(NameSpaceProject proj, string nameSpace)
+        public string AddNameSpaceDecl(ProjectReference proj, string nameSpace)
         {
             // I see a declared namespace XX {}.
 
@@ -195,27 +117,53 @@ namespace CodeCounter
             return null;
         }
 
-        public NameSpaceProject AddProjectFile(string dirProject, string fileName)
+        public PackageReference AddPackageRef(string name)
+        {
+            // do we already have this package?
+            PackageReference package;
+            if (Packages.TryGetValue(name, out package))
+            {
+                return package;
+            }
+            package = new PackageReference(name);
+            Packages.Add(name, package);
+            return package;
+        }
+
+        public ProjectReference AddProjectRef(string dir, string fileName)
+        {
+            // do we already have this project?
+            string fileNameL = fileName.ToLower();
+
+            ProjectReference project;
+            if (Projects.TryGetValue(fileNameL, out project))
+            {
+                return project;
+            }
+            project = new ProjectReference(dir, fileName);
+            Projects.Add(fileNameL, project);
+            return project;
+        }
+
+        public ProjectReference AddProjectFile(string dirProject, string fileName)
         {
             // This dir has a project. .csproj file. all under it are considered to be its files, except if claimed by a sub project. 
             // Sub-projects are terrible style. Avoid this practice please !!!
             // DONT Read References from csproj. These can be extraneous. We are looking for real / true references.
 
-            fileName = fileName.ToLower();
+            string fileNameL = fileName.ToLower();
 
-            NameSpaceProject proj;
-            if (Projects.TryGetValue(fileName, out proj))
+            ProjectReference proj;
+            if (Projects.TryGetValue(fileNameL, out proj))
             {
+                proj.ReadProjectFile(this, dirProject, fileName);
                 return proj;
             }
 
-            proj = new NameSpaceProject
-            {
-                DirBase = dirProject.ToLower(),
-                Name = fileName,
-            };
+            proj = new ProjectReference(dirProject, fileName);
+            proj.ReadProjectFile(this, dirProject, fileName);
 
-            Projects.Add(fileName, proj);
+            Projects.Add(fileNameL, proj);
             return proj;
         }
 

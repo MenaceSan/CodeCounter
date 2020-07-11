@@ -43,8 +43,11 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="LineState.cs" />
+    <Compile Include="NameSpaceLevel.cs" />
     <Compile Include="NameSpaces.cs" />
+    <Compile Include="PackageReference.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="ProjectReference.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="CodeStats.cs" />
   </ItemGroup>
