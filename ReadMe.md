@@ -1,4 +1,9 @@
 # CodeCounter
+Copyright (c) 2020 Dennis Robinson (www.menasoft.com). All rights reserved.  
+Licensed under the MIT License. https://opensource.org/licenses/MIT
+
+Version 1.0.0.2
+
 https://github.com/MenaceSan/CodeCounter.git
 
 How big is your .cs code base?<br />

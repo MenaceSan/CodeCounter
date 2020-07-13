@@ -1,4 +1,8 @@
-﻿using System.Collections.Generic;
+﻿//  
+// Copyright (c) 2020 Dennis Robinson (www.menasoft.com). All rights reserved.  
+// Licensed under the MIT License. See ReadMe.md file in the project root for full license information.  
+// 
+using System.Collections.Generic;
 using System.IO;
 
 namespace CodeCounter
@@ -12,14 +16,21 @@ namespace CodeCounter
         public string Name;         // Projects file name. from .csproj
         public string DirBase;      // (lower case) Project owns all files under this directory. (except if claimed by a sub project. which is a bad idea but allow it)
         // public string Version;
+        public bool IsExe;      // is Library or Exe ?
+        public bool IsTest;     // Has *Test* in name.
 
         public string NameShow => Name.Replace('.', '_');
 
-        const string colorRed = "[color=\"0.002 0.999 0.999\"]";   // 
-        const string colorBlue = "[color=\"0.650 0.700 0.700\"]"; // blue 
-        const string colorGreen = "[color=\"0.348 0.839 0.839\"]"; //
+        // http://graphviz.org/doc/info/colors.html
+        const string colorFail = "[color=\"red1\"]";   // 0.002 0.999 0.999
+        const string colorExe = "[color=\"yellow1\"]";   // top level entry point. 0.348 0.348 0.999
+        const string colorProject = "[color=\"green2\"]"; // 0.348 0.839 0.839
+        const string colorLib = "[color=\"royalblue\"]"; // blue 0.650 0.700 0.700
 
-        public string ColorShow => FailRead ? colorRed : IsRead ? colorGreen : colorBlue;
+        const string colorTest = "[color=\"gray53\"]";   // 
+        const string colorPackage = "[color=\"tan1\"]";   // Verbose will show packages as well.
+
+        public string ColorShow => FailRead ? colorFail : IsTest ? colorTest : IsExe ? colorExe : IsRead ? colorProject : colorLib;
 
         public bool IsDisplayed { get; set; }
         public bool IsRead { get; set; }         // We found and read the project file.
@@ -29,11 +40,12 @@ namespace CodeCounter
         public SortedList<string, ProjectReference> ProjectRefs = new SortedList<string, ProjectReference>();      // projects declared in .csproj file.
         public SortedList<string, PackageReference> PackageRefs = new SortedList<string, PackageReference>();
         public HashSet<NameSpaceLevel> NameSpacesUsed = new HashSet<NameSpaceLevel>();         // namespaces used that are not defined in my project.
- 
+
         public ProjectReference(string dir, string name)
         {
             DirBase = dir;
             Name = Path.GetFileNameWithoutExtension(name);
+            IsTest = name.IndexOf("Test", 0, System.StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         public void TrimNameSpacesUsed()
@@ -50,14 +62,16 @@ namespace CodeCounter
                 return null;
             i += name.Length;
             int j = lineRaw.IndexOf('\"', i);   // open quote
-            if (j<0)
+            if (j < 0)
                 return null;
-            i = j+1;
+            i = j + 1;
             j = lineRaw.IndexOf('\"', i);   // close quote
             if (j < 0)
                 return null;
-            return lineRaw.Substring(i,j-i);
+            return lineRaw.Substring(i, j - i);
         }
+
+        const string cmdExe = "<OutputType>Exe</OutputType>";
 
         public void ReadProjectFile(NameSpaces namespaces, string dirProject, string fileName)
         {
@@ -77,6 +91,11 @@ namespace CodeCounter
                     string lineRaw;
                     while ((lineRaw = rdr.ReadLine()) != null)
                     {
+                        if (lineRaw.Contains(cmdExe))
+                        {
+                            IsExe = true;
+                            continue;
+                        }
                         if (lineRaw.Contains("<PackageReference"))   // Visual Studio "Core" Style 
                         {
                             // <PackageReference Include="Plugin.Fingerprint" Version="2.1.1" />
@@ -120,7 +139,7 @@ namespace CodeCounter
             NameSpacesUsed.Add(level);
         }
 
-        internal void ShowModules(TextWriter con)
+        internal void ShowGraph0(TextWriter con)
         {
             // Deal with my dependencies first.
             if (IsDisplayed)
@@ -129,10 +148,15 @@ namespace CodeCounter
             con.WriteLine($"{NameShow} {ColorShow}");
             foreach (var project in ProjectRefs.Values)
             {
-                project.ShowModules(con);
-                con.WriteLine($"{NameShow} -> {project.NameShow} {project.ColorShow};");
+                project.ShowGraph0(con);
+                con.WriteLine($"{NameShow} -> {project.NameShow} {ColorShow};");
+            }
+
+            // if verbose ?
+            foreach (var package in PackageRefs.Values)
+            {
+
             }
         }
     }
-
 }

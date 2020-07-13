@@ -1,4 +1,9 @@
+//  
+// Copyright (c) 2020 Dennis Robinson (www.menasoft.com). All rights reserved.  
+// Licensed under the MIT License. See ReadMe.md file in the project root for full license information.  
+// 
 using System;
+using System.Collections.Generic;
 
 namespace CodeCounter
 {
@@ -7,8 +12,9 @@ namespace CodeCounter
         // The main entry point.
         // https://blog.codinghorror.com/coding-without-comments/
         // ex. CodeCounter -tree c:\mysources
+        // -wait -tree -graph0 -ignore Chess C:\FourTe\Src C:\FourTe\Dot
 
-        public const string kVersion = "2";
+        public const string kVersion = "3";
 
         static void Main(string[] args)
         {
@@ -18,8 +24,11 @@ namespace CodeCounter
 
             bool waitOnDone = false;
             var stats = new CodeStats(Console.Out);
-            foreach (string arg in args)
+            var roots = new List<string>();
+
+            for (int argN = 0; argN < args.Length; argN++)
             {
+                string arg = args[argN];
                 if (string.IsNullOrWhiteSpace(arg))
                     continue;
 
@@ -28,11 +37,17 @@ namespace CodeCounter
                 if (argL == "-help" || argL == "-?")
                 {
                     Console.WriteLine("CodeCounter walks a directory of .cs sources and compiles some statistics.");
-                    Console.WriteLine("Use: CodeCounter -flag directory");
+                    Console.WriteLine("Use: CodeCounter -flag directory directory2 ...");
                     Console.WriteLine("-verbose : show methods.");
                     Console.WriteLine("-tree : display methods and names as tree.");
-                    Console.WriteLine("-showmodules : list the modules.");
+                    // Console.WriteLine("-graph0 : list the modules to output.");
+                    // Console.WriteLine("-graph Name : output the modules list to a graphviz file by name.");
                     Console.WriteLine("-wait : pause at the end.");
+
+                    // -ignore xx // ignore top level modules with this name pattern
+                    // -licenses
+                    // -showlibs (local and nuget)
+
                     return;
                 }
 
@@ -42,9 +57,15 @@ namespace CodeCounter
                     continue;
                 }
 
-                if (argL == "-showmodules")
+                if (argL == "-ignore")
                 {
-                    stats.ShowModules = true;
+                    stats.Ignore.Add(args[++argN]);
+                    continue;
+                }
+
+                if (argL == "-graph0")
+                {
+                    stats.Graph0 = true;
                     continue;
                 }
 
@@ -62,26 +83,34 @@ namespace CodeCounter
 
                 if (argL.StartsWith("-"))
                 {
-                    Console.WriteLine("Bad Arg");
+                    Console.WriteLine($"Bad Arg '{argL}'");
                     return;
                 }
 
-                stats.RootDir = arg;
+                // Add multiple root directories ?
+                if (!string.IsNullOrWhiteSpace(arg))
+                    roots.Add(arg);
             }
 
-            if (string.IsNullOrWhiteSpace(stats.RootDir))
+            if (roots.Count <= 0)
             {
-                stats.RootDir = Environment.CurrentDirectory;       // just use current dir.
+                roots.Add(Environment.CurrentDirectory);       // just use current dir.
             }
 
-            Console.WriteLine($"Read Dir '{stats.RootDir}' for files of type {String.Join(",", CodeStats._exts)}");
+            int dirsProcessed = 0;
+            foreach (string root in roots)
+            {
+                dirsProcessed++;
+                Console.WriteLine($"Read Dir '{root}' for files of type {String.Join(",", CodeStats._exts)}");
+                stats.RootDir = root;
+                stats.ReadDir(root, dirsProcessed >= roots.Count);
+            }
 
-            stats.ReadDir(stats.RootDir);
             stats.DumpStats();
 
-            if (stats.ShowModules)
+            if (stats.Graph0)
             {
-                stats.NameSpaces.ShowModules(Console.Out);
+                stats.NameSpaces.ShowGraph0(Console.Out);
             }
 
             if (waitOnDone)

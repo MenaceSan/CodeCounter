@@ -1,19 +1,19 @@
-﻿using System.ComponentModel;
+﻿//  
+// Copyright (c) 2020 Dennis Robinson (www.menasoft.com). All rights reserved.  
+// Licensed under the MIT License. See ReadMe.md file in the project root for full license information.  
+// 
+using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace CodeCounter
 {
-
-    // This is a comment prefixing the class. Leave it here as an internal test for comment counting.
-    internal class CodeStats
+    internal class CodeStatsProject
     {
-        // Gather stats on a bunch of .cs files.
-        // similar to :
-        //  https://www.ndepend.com/sample-reports/
+        // Stats for a single Project
 
-        [Description("Number of .csproj files. One per directory.")]
-        public int NumberOfProjects = 0;
         [Description("Number of dirs with files. Ignore empty dirs.")]
         public int NumberOfDirectories = 0;
         [Description("Number of (not empty) .cs files read")]
@@ -48,6 +48,17 @@ namespace CodeCounter
         public int NumberOfMethods = 0;
         [Description("Number of methods that have a comment immediately before or after")]
         public int NumberOfMethodComments = 0;
+    }
+
+    // This is a comment prefixing the class. Leave it here as an internal test for comment counting.
+    internal class CodeStats : CodeStatsProject
+    {
+        // Gather stats on a bunch of .cs files.
+        // similar to :
+        //  https://www.ndepend.com/sample-reports/
+
+        [Description("Number of .csproj files. One per directory.")]
+        public int NumberOfProjects = 0;
 
         internal string RootDir;            // read everything under here.
 
@@ -55,10 +66,11 @@ namespace CodeCounter
         private readonly TextWriter _con;            // Console for Verbose messages and errors.
 
         internal bool MakeTree = false;
-        internal bool ShowModules = false;
+        internal bool Graph0 = false;
 
         internal long NumberOfCharsMsg = 0;      // NumberOfChars when i printed status last.
 
+        internal readonly List<string> Ignore = new List<string>();
         internal readonly NameSpaces NameSpaces;
 
         public CodeStats(TextWriter con)
@@ -94,23 +106,36 @@ namespace CodeCounter
 
         }
 
-        public static readonly string[] _exts = { ".cs" };     // what file types do we read?
+        public static readonly string[] _exts = { ".cs", ".csproj" };     // what file types do we read?
         public static readonly string[] _dirsEx = { "bin", "obj", "packages" };
         public static readonly string[] _classes = { "class", "enum", "struct", "interface" };
         public static readonly char[] _methodEx = { '=', '{' };
 
-        private string GetTree(int i)
+        private string GetTree(int i, bool isLast)
         {
             if (!this.MakeTree) // && Verbose
                 return "";
-            switch (i)
+            if (isLast)
             {
-                case 0: return "";
-                case 1: return "├ ";
-                case 2: return "│├ ";
-                case 3: return "││├ ";
+                switch (i)
+                {
+                    case 0: return "";
+                    case 1: return "└ ";        // ReadFile
+                    case 2: return "│└ ";       // class/struct
+                    case 3: return "││└ ";      // methods
+                }
             }
-            return "";
+            else
+            {
+                switch (i)
+                {
+                    case 0: return "";
+                    case 1: return "├ ";        // ReadFile
+                    case 2: return "│├ ";       // class/struct
+                    case 3: return "││├ ";      // methods
+                }
+            }
+            return "";  // should not get here ?
         }
 
         /// <summary>
@@ -118,14 +143,14 @@ namespace CodeCounter
         /// </summary>
         /// <param name="filePath">The filename to count.</param>
         /// <returns>The number of lines in the file.</returns>  
-        private void ReadFile(string filePath, ProjectReference proj)
+        private void ReadFile(string filePath, ProjectReference proj, bool isLast)
         {
             if (filePath.EndsWith("AssemblyInfo.cs"))  // always ignore this file for comment counting purposes.
                 return;
 
             if (Verbose || MakeTree)
             {
-                _con.WriteLine($"{GetTree(1)}File: {filePath.Substring(RootDir.Length)}");
+                _con.WriteLine($"{GetTree(1, isLast)}File: {filePath.Substring(RootDir.Length)}");
             }
 
             NumberOfFiles++;
@@ -250,7 +275,7 @@ namespace CodeCounter
                             NumberOfClasses++;
                             if (Verbose || MakeTree)
                             {
-                                _con.WriteLine($"{GetTree(2)}Class: {lineCode}");
+                                _con.WriteLine($"{GetTree(2, false)}Class: {lineCode}");
                             }
                             if (lineState.LastLineWasComment)
                             {
@@ -276,7 +301,7 @@ namespace CodeCounter
                                 NumberOfMethods++;
                                 if (Verbose || MakeTree)
                                 {
-                                    _con.WriteLine($"{GetTree(3)}Method: {lineCode}");
+                                    _con.WriteLine($"{GetTree(3, false)}Method: {lineCode}");
                                 }
                                 if (lineState.LastLineWasComment)
                                 {
@@ -308,11 +333,28 @@ namespace CodeCounter
             }
         }
 
-        public void ReadDir(string dirPath, ProjectReference proj = null)
+        public bool IsIgnore(string name)
+        {
+            foreach(string ignored in Ignore)
+            {
+                if (Regex.IsMatch(name, ignored))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public void ReadDir(string dirPath, bool isLast, ProjectReference proj = null)
         {
             // Recursive dir reader.
 
             var d = new DirectoryInfo(dirPath);     //  Assuming Test is your Folder
+
+            if (IsIgnore(d.Name))
+            {
+                return;
+            }
 
             bool showDir = false;   // only show dir if it has files.
             ProjectReference projDef = null;      // only one per directory.
@@ -320,15 +362,20 @@ namespace CodeCounter
             // deal with files first.
             // System.IO.IOException: 'The directory name is invalid.' = this was a file name not a dir name ?
 
+            int filesProcessed = 0;
             int filesInDir = 0;
-            var Files = d.GetFiles("*.*");      // Getting all files
+
+            // Getting all files.  e.g. NOT Thumb.db 
+            var Files = d.GetFiles("*.*")
+                .Where(file => !file.Attributes.HasFlag(FileAttributes.Hidden) || !file.Attributes.HasFlag(FileAttributes.System))
+                .Where(file => _exts.Contains( Path.GetExtension(file.Name)))
+                .ToList(); 
+
             foreach (FileInfo file in Files)
             {
-                if (file.Attributes.HasFlag(FileAttributes.Hidden) && file.Attributes.HasFlag(FileAttributes.System))   // e.g. Thumb.db
-                    continue;
+                filesProcessed++;
 
-                string ext = Path.GetExtension(file.Name);
-                if (ext == ".csproj")
+                if (file.Name.EndsWith(".csproj"))
                 {
                     // Multi projects in the same dir count as the same project.
                     if (projDef == null)
@@ -339,17 +386,14 @@ namespace CodeCounter
                     continue;
                 }
 
-                if (!_exts.Contains(ext))    // ignore this. assume lower case ??
-                    continue;
-
                 if ((this.Verbose || MakeTree ) && !showDir)
                 {
-                    _con.WriteLine($"{GetTree(0)}Dir: {dirPath.Substring(RootDir.Length)}");
+                    _con.WriteLine($"{GetTree(0, isLast)}Dir: {dirPath.Substring(RootDir.Length)}");
                     showDir = true;
                 }
 
                 filesInDir++;
-                ReadFile(file.FullName, proj);
+                ReadFile(file.FullName, proj, filesProcessed >= Files.Count);
             }
 
             if (filesInDir > 0)
@@ -357,17 +401,15 @@ namespace CodeCounter
                 NumberOfDirectories++;
             }
 
-            // Recurse into dirs.
-            var Dirs = d.GetDirectories();
-            foreach (var dir in Dirs)
+            // Recurse into dirs. // NOT excluded dir. NOT hidden
+            int dirsProcessed = 0;
+
+            var dirs = d.GetDirectories().Where(dir =>!_dirsEx.Contains(dir.Name) && !dir.Name.StartsWith(".")).ToList();
+            foreach (var dir in dirs)
             {
-                if (_dirsEx.Contains(dir.Name))     // excluded dir
-                    continue;
-                if (dir.Name.StartsWith("."))       // hidden
-                    continue;
-                ReadDir(dir.FullName, proj);
+                dirsProcessed++;
+                ReadDir(dir.FullName, dirsProcessed >= dirs.Count, proj);
             }
         }
     }
-
 }

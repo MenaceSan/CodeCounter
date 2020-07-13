@@ -1,4 +1,8 @@
-﻿using System.Collections.Generic;
+﻿//  
+// Copyright (c) 2020 Dennis Robinson (www.menasoft.com). All rights reserved.  
+// Licensed under the MIT License. See ReadMe.md file in the project root for full license information.  
+// 
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 
@@ -22,9 +26,12 @@ namespace CodeCounter
         {
         }
 
-        public void ShowModules(TextWriter con)
+        public void ShowGraph0(TextWriter con)
         {
             // dump format like : dependencies.webgraphviz.txt
+            // https://www.codeproject.com/Articles/1164156/Using-Graphviz-in-your-project-to-create-graphs-fr
+
+            // var graph = new Graphviz();
 
             con.WriteLine("Modules: paste below into http://www.webgraphviz.com/ or use http://www.graphviz.org/");
 
@@ -32,7 +39,7 @@ namespace CodeCounter
 
             foreach (ProjectReference project in Projects.Values)
             {
-                project.ShowModules(con);
+                project.ShowGraph0(con);
             }
 
             con.WriteLine("}");
@@ -76,7 +83,7 @@ namespace CodeCounter
         }
 
 
-        public void AddMethodCall(ProjectReference proj, string method)
+        public void AddMethodCall_TODO(ProjectReference proj, string method)
         {
             // We found a method call that has a namespace prefix.
 
@@ -147,9 +154,9 @@ namespace CodeCounter
 
         public ProjectReference AddProjectFile(string dirProject, string fileName)
         {
-            // This dir has a project. .csproj file. all under it are considered to be its files, except if claimed by a sub project. 
+            // This directory has a project. .csproj file. all under it are considered to be its files, except if claimed by a sub project. 
             // Sub-projects are terrible style. Avoid this practice please !!!
-            // DONT Read References from csproj. These can be extraneous. We are looking for real / true references.
+            // DONT Read References from .csproj. These can be extraneous. We are looking for real / true references.
 
             string fileNameL = fileName.ToLower();
 
@@ -167,7 +174,7 @@ namespace CodeCounter
             return proj;
         }
 
-        public void DumpStats(TextWriter con)
+        public void DumpStats_TODO(TextWriter con)
         {
             // What things did i declare i need but never use?
             // 

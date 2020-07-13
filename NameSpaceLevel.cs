@@ -1,10 +1,16 @@
-﻿using System.Collections.Generic;
+﻿//  
+// Copyright (c) 2020 Dennis Robinson (www.menasoft.com). All rights reserved.  
+// Licensed under the MIT License. See ReadMe.md file in the project root for full license information.  
+// 
+using System.Collections.Generic;
 
 namespace CodeCounter
 {
+    /// <summary>
+    /// Define a level/segment of a namespace.
+    /// </summary>
     public class NameSpaceLevel
-    {
-        // Define a level/segment of a namespace.
+    {     
         public readonly string Name;     // segment/level name.
 
         public readonly NameSpaceLevel Parent;
