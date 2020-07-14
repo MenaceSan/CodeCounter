@@ -11,15 +11,11 @@ namespace CodeCounter
     /// A project that might own namespaces.
     /// It has dependencies.
     /// </summary>
-    public class ProjectReference
+    public class ProjectReference : ModuleBase
     {
-        public string Name;         // Projects file name. from .csproj
         public string DirBase;      // (lower case) Project owns all files under this directory. (except if claimed by a sub project. which is a bad idea but allow it)
-        // public string Version;
         public bool IsExe;      // is Library or Exe ?
         public bool IsTest;     // Has *Test* in name.
-
-        public string NameShow => Name.Replace('.', '_');
 
         // http://graphviz.org/doc/info/colors.html
         const string colorFail = "[color=\"red1\"]";   // 0.002 0.999 0.999
@@ -28,7 +24,6 @@ namespace CodeCounter
         const string colorLib = "[color=\"royalblue\"]"; // blue 0.650 0.700 0.700
 
         const string colorTest = "[color=\"gray53\"]";   // 
-        const string colorPackage = "[color=\"tan1\"]";   // Verbose will show packages as well.
 
         public string ColorShow => FailRead ? colorFail : IsTest ? colorTest : IsExe ? colorExe : IsRead ? colorProject : colorLib;
 
@@ -38,13 +33,12 @@ namespace CodeCounter
 
         // Declared refs vs used refs. SortedList always lower case sorted.
         public SortedList<string, ProjectReference> ProjectRefs = new SortedList<string, ProjectReference>();      // projects declared in .csproj file.
-        public SortedList<string, PackageReference> PackageRefs = new SortedList<string, PackageReference>();
         public HashSet<NameSpaceLevel> NameSpacesUsed = new HashSet<NameSpaceLevel>();         // namespaces used that are not defined in my project.
 
         public ProjectReference(string dir, string name)
+            : base(Path.GetFileNameWithoutExtension(name))
         {
             DirBase = dir;
-            Name = Path.GetFileNameWithoutExtension(name);
             IsTest = name.IndexOf("Test", 0, System.StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
@@ -56,6 +50,8 @@ namespace CodeCounter
 
         public string FindAttr(string lineRaw, string name)
         {
+            // Get XML attribute by name.
+
             name += "=";
             int i = lineRaw.IndexOf(name);
             if (i < 0)

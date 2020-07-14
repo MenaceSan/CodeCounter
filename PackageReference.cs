@@ -10,13 +10,13 @@ using System.Threading.Tasks;
 
 namespace CodeCounter
 {
-    public class PackageReference
+    // a NuGet package .
+    public class PackageReference : ModuleBase
     {
-        public string Name;         // Include="". from .csproj
-
+        public const string colorPackage = "[color=\"tan1\"]";   // Verbose will show (nuGet) packages as well.
         public PackageReference(string name)
+            : base(name)
         {
-            Name = name;
         }
     }
 }

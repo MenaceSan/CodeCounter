@@ -10,13 +10,13 @@ using System.Text.RegularExpressions;
 
 namespace CodeCounter
 {
-    internal class CodeStatsProject
+    public class CodeStatsProject
     {
         // Stats for a single Project
 
         [Description("Number of dirs with files. Ignore empty dirs.")]
         public int NumberOfDirectories = 0;
-        [Description("Number of (not empty) .cs files read")]
+        [Description("Number of (not empty) source files read")]
         public int NumberOfFiles = 0;
         [Description("Number of total characters read")]
         public long NumberOfChars = 0;
@@ -44,14 +44,50 @@ namespace CodeCounter
         public int NumberOfClasses = 0;
         [Description("Number of classes that have a comment immediately before or after")]
         public int NumberOfClassComments = 0;
-        [Description("Number of classe methods (Not properties or anon, lambda etc.)")]
+        [Description("Number of class methods (Not properties or anon, lambda etc.)")]
         public int NumberOfMethods = 0;
         [Description("Number of methods that have a comment immediately before or after")]
         public int NumberOfMethodComments = 0;
+
+        public void DumpStats(TextWriter con)
+        {
+            con.WriteLine($"{nameof(NumberOfDirectories)} = {NumberOfDirectories}");
+            con.WriteLine($"{nameof(NumberOfFiles)} = {NumberOfFiles}");
+            con.WriteLine($"{nameof(NumberOfErrors)} = {NumberOfErrors}");
+
+            con.WriteLine($"{nameof(NumberOfLines)} = {NumberOfLines}");
+
+            con.WriteLine($"{nameof(NumberOfLinesBlank)} = {NumberOfLinesBlank}");
+            con.WriteLine($"{nameof(NumberOfCommentBlank)} = {NumberOfCommentBlank}");
+            con.WriteLine($"{nameof(NumberOfCommentLines)} = {NumberOfCommentLines}");
+            con.WriteLine($"{nameof(NumberOfCommentedOutCode)} = {NumberOfCommentedOutCode}");
+            con.WriteLine($"{nameof(NumberOfLinesCode)} = {NumberOfLinesCode}");
+            con.WriteLine($"{nameof(NumberOfLinesCodeAndComment)} = {NumberOfLinesCodeAndComment}");
+
+            con.WriteLine($"{nameof(NumberOfClasses)} = {NumberOfClasses}");
+            con.WriteLine($"{nameof(NumberOfClassComments)} = {NumberOfClassComments}");
+            con.WriteLine($"{nameof(NumberOfMethods)} = {NumberOfMethods}");
+            con.WriteLine($"{nameof(NumberOfMethodComments)} = {NumberOfMethodComments}");
+
+            // Summary of percentages:
+            // Percent of classes with comments
+            // Percent of methods with comments
+        }
+    }
+
+    public class CodeClass
+    {
+        public readonly string Name;
+        public readonly List<string> Methods = new List<string>();
+
+        public CodeClass(string name)
+        {
+            Name = name;
+        }
     }
 
     // This is a comment prefixing the class. Leave it here as an internal test for comment counting.
-    internal class CodeStats : CodeStatsProject
+    public class CodeStats : CodeStatsProject
     {
         // Gather stats on a bunch of .cs files.
         // similar to :
@@ -61,17 +97,21 @@ namespace CodeCounter
         public int NumberOfProjects = 0;
 
         internal string RootDir;            // read everything under here.
-
-        internal bool Verbose = false;         // Print the class/methods i find.
         private readonly TextWriter _con;            // Console for Verbose messages and errors.
 
-        internal bool MakeTree = false;
-        internal bool Graph0 = false;
+        internal bool Verbose = false;         // Print the class/methods i find.
+        internal bool MakeTree = false;     // Output a tree of Dir/File/Class/Methods.
+        internal bool Graph0 = false;       // Build the GraphViz markup.
+        internal string Unprefix;           // strip this prefix from names. TODO
 
-        internal long NumberOfCharsMsg = 0;      // NumberOfChars when i printed status last.
-
-        internal readonly List<string> Ignore = new List<string>();
+        internal readonly List<string> Ignore = new List<string>();     // ignore these dirs by name.
         internal readonly NameSpaces NameSpaces;
+
+        public static readonly string[] kExtsAll = { ".cs", ".csproj" };     // what file types do we read? , ".cpp", ".vcxproj"
+        public static readonly string[] kExtsProj = { ".csproj" };     // what project file types do we read? , ".vcxproj" 
+        public static readonly string[] kExtsSrc = { ".cs" };     // what source file types do we read? , ".cpp" 
+
+        public static readonly string[] kDirsIgnore = { "bin", "obj", "packages" };     // exclude these.
 
         public CodeStats(TextWriter con)
         {
@@ -81,61 +121,76 @@ namespace CodeCounter
 
         public void DumpStats()
         {
+            // dump all stats.
             _con.WriteLine($"{nameof(NumberOfProjects)} = {NumberOfProjects}");
-            _con.WriteLine($"{nameof(NumberOfDirectories)} = {NumberOfDirectories}");
-            _con.WriteLine($"{nameof(NumberOfFiles)} = {NumberOfFiles}");
-            _con.WriteLine($"{nameof(NumberOfErrors)} = {NumberOfErrors}");
-
-            _con.WriteLine($"{nameof(NumberOfLines)} = {NumberOfLines}");
-
-            _con.WriteLine($"{nameof(NumberOfLinesBlank)} = {NumberOfLinesBlank}");
-            _con.WriteLine($"{nameof(NumberOfCommentBlank)} = {NumberOfCommentBlank}");
-            _con.WriteLine($"{nameof(NumberOfCommentLines)} = {NumberOfCommentLines}");
-            _con.WriteLine($"{nameof(NumberOfCommentedOutCode)} = {NumberOfCommentedOutCode}");
-            _con.WriteLine($"{nameof(NumberOfLinesCode)} = {NumberOfLinesCode}");
-            _con.WriteLine($"{nameof(NumberOfLinesCodeAndComment)} = {NumberOfLinesCodeAndComment}");
-
-            _con.WriteLine($"{nameof(NumberOfClasses)} = {NumberOfClasses}");
-            _con.WriteLine($"{nameof(NumberOfClassComments)} = {NumberOfClassComments}");
-            _con.WriteLine($"{nameof(NumberOfMethods)} = {NumberOfMethods}");
-            _con.WriteLine($"{nameof(NumberOfMethodComments)} = {NumberOfMethodComments}");
-
-            // Summary of percentages:
-            // Percent of classes
-            // Percent of methods
-
+            base.DumpStats(_con);
         }
 
-        public static readonly string[] _exts = { ".cs", ".csproj" };     // what file types do we read?
-        public static readonly string[] _dirsEx = { "bin", "obj", "packages" };
-        public static readonly string[] _classes = { "class", "enum", "struct", "interface" };
-        public static readonly char[] _methodEx = { '=', '{' };
-
-        private string GetTree(int i, bool isLast)
+        private int _TreeLastMask = 0;
+        private string GetTree(int level, bool isLast)
         {
-            if (!this.MakeTree) // && Verbose
+            if (!this.MakeTree)
                 return "";
+            if (level == 0)     // directories.
+                return "";
+            level--;
             if (isLast)
-            {
-                switch (i)
-                {
-                    case 0: return "";
-                    case 1: return "└ ";        // ReadFile
-                    case 2: return "│└ ";       // class/struct
-                    case 3: return "││└ ";      // methods
-                }
-            }
+                _TreeLastMask |= (1 << level);        // set this.
             else
+                _TreeLastMask &= ~(1 << level);        // clear this.
+
+            string prefix = "";
+            for (int j = 0; j < level; j++)
             {
-                switch (i)
+                prefix += ((_TreeLastMask & (1 << j)) == 0) ? "│" : " ";
+            }
+
+            prefix += ((_TreeLastMask & (1 << level)) == 0) ? "├ " : "└ ";
+            return prefix;
+        }
+
+        public void DumpClasses(List<CodeClass> classes)
+        {
+            // assume Verbose || MakeTree
+            if (classes == null)
+                return;
+            int i = 0;
+            foreach (var class1 in classes)
+            {
+                i++;
+                _con.WriteLine($"{GetTree(2, i == classes.Count)}Class: {class1.Name}");
+                int j = 0;
+                foreach (string method in class1.Methods)
                 {
-                    case 0: return "";
-                    case 1: return "├ ";        // ReadFile
-                    case 2: return "│├ ";       // class/struct
-                    case 3: return "││├ ";      // methods
+                    j++;
+                    _con.WriteLine($"{GetTree(3, j == class1.Methods.Count)}Method: {method}");
                 }
             }
-            return "";  // should not get here ?
+        }
+
+        public void DumpFile(string name, bool isLast, List<string> errors)
+        {
+            if (Verbose || MakeTree)
+            {
+                _con.WriteLine($"{GetTree(1, isLast)}File: {name}");
+            }
+            foreach (string err in errors)
+            {
+                NumberOfErrors++;
+                _con.WriteLine($"Error: {err}");
+            }
+        }
+
+        private long _NumberOfCharsMsg = 0;      // NumberOfChars when i printed status last. // tick to show we are alive.
+        public void OnReadLine(int numberOfChars)
+        {
+            NumberOfChars += numberOfChars;
+
+            if (!Verbose && NumberOfChars - _NumberOfCharsMsg > 16 * 1024 * 1024)
+            {
+                _con.WriteLine(".");    // tick to show we are alive.
+                _NumberOfCharsMsg = NumberOfChars;
+            }
         }
 
         /// <summary>
@@ -143,199 +198,40 @@ namespace CodeCounter
         /// </summary>
         /// <param name="filePath">The filename to count.</param>
         /// <returns>The number of lines in the file.</returns>  
-        private void ReadFile(string filePath, ProjectReference proj, bool isLast)
+        private void ReadSrcFile(string filePath, ProjectReference proj, bool isLast)
         {
-            if (filePath.EndsWith("AssemblyInfo.cs"))  // always ignore this file for comment counting purposes.
-                return;
-
-            if (Verbose || MakeTree)
-            {
-                _con.WriteLine($"{GetTree(1, isLast)}File: {filePath.Substring(RootDir.Length)}");
-            }
-
-            NumberOfFiles++;
-            var lineState = new LineState();
-
             using (var rdr = new StreamReader(filePath))
             {
-                bool hasCode = false;   // found some code in the file.
-                string lineRaw;
-                while ((lineRaw = rdr.ReadLine()) != null)
+                string fileRel = filePath.Substring(RootDir.Length);
+                int lines = 0;
+                if (filePath.EndsWith(".cs"))
                 {
-                    lineState.LineNumber++;
-                    NumberOfLines++;
-                    NumberOfChars += lineRaw.Length;
-
-                    if (NumberOfChars - NumberOfCharsMsg > 16 * 1024 * 1024)
-                    {
-                        _con.WriteLine(".");
-                        NumberOfCharsMsg = NumberOfChars;
-                    }
-
-                    if (!hasCode && lineRaw.Contains("<auto-generated"))   // ignore this whole file.
-                    {
-                        NumberOfLines -= lineState.LineNumber;  // ignore this file.
-                        NumberOfFiles--;
-                        // Comment total lines might be off now??
-                        return;
-                    }
-
-                    lineRaw = lineRaw.Trim();
-                    if (lineRaw.StartsWith("#"))  // Ignore preprocess line if, else, pragma , etc.
-                    {
-                        NumberOfLinesCode++;
-                        continue;
-                    }
-
-                    lineState.ClearLine();
-                    string lineCode = lineState.ReadLine(lineRaw);
-
-                    if (lineCode.StartsWith(NameSpaces.kUsingDecl))
-                    {
-                        NameSpaces.AddUsingDecl(proj, lineCode.Substring(NameSpaces.kUsingDecl.Length));
-                    }
-                    else if (lineCode.StartsWith(NameSpaces.kNameSpaceDecl))
-                    {
-                        string err = NameSpaces.AddNameSpaceDecl(proj, lineCode.Substring(NameSpaces.kNameSpaceDecl.Length));
-                        if (err != null)
-                        {
-                            _con.WriteLine($"Error: {err} at {filePath.Substring(RootDir.Length)}:{lineState.LineNumber}");
-                            NumberOfErrors++;
-                        }
-                    }
-
-                    if (lineState.Error.Length > 0)
-                    {
-                        _con.WriteLine($"Error '{lineState.Error}' at {filePath.Substring(RootDir.Length)}:{lineState.LineNumber}");
-                        NumberOfErrors++;
-                    }
-                    if (lineState.HasCode && lineState.HasCommentText)
-                    {
-                        hasCode = true;
-                        NumberOfLinesCodeAndComment++;
-                    }
-                    else if (lineState.HasCommentText)
-                    {
-                        NumberOfCommentLines++;
-                    }
-                    else if (lineState.HasCode)
-                    {
-                        hasCode = true;
-                        NumberOfLinesCode++;
-                    }
-                    else if (lineState.HasComment)
-                    {
-                        NumberOfCommentBlank++;
-                        continue;
-                    }
-                    else
-                    {
-                        NumberOfLinesBlank++;
-                        continue;
-                    }
-
-                    if (lineState.HasCommentText && !lineState.HasCode)
-                    {
-                        lineState.LastLineWasComment = true;
-                        if (lineState.LastLineWasClass)
-                        {
-                            NumberOfClassComments++;
-                            lineState.LastLineWasClass = false;
-                        }
-                        if (lineState.LastLineWasMethod)
-                        {
-                            NumberOfMethodComments++;
-                            lineState.LastLineWasMethod = false;
-                        }
-                    }
-
-                    if (!lineState.HasCode || lineCode.Length <= 0) // maybe a comment. done with that. 
-                        continue;
-                    if (lineCode[0] == '[' && lineCode[lineCode.Length - 1] == ']')   // ignore attributes.
-                        continue;
-
-                    // Is this a class ?
-                    if (!lineCode.StartsWith("{"))
-                    {
-                        lineState.LastLineWasClass = false;
-                    }
-
-                    foreach (string cn in _classes)
-                    {
-                        int k = lineCode.IndexOf(cn);
-                        if (k >= 0
-                            && (k == 0 || char.IsWhiteSpace(lineCode[k - 1]))
-                            && (k + cn.Length >= lineCode.Length || char.IsWhiteSpace(lineCode[k + cn.Length])))
-                        {
-                            if (lineState.OpenClassBrace == 0)  // ignore child class ?
-                            {
-                                lineState.OpenClassBrace = lineState.OpenBraceCount + 1;
-                            }
-                            lineState.LastLineWasClass = true;
-                            NumberOfClasses++;
-                            if (Verbose || MakeTree)
-                            {
-                                _con.WriteLine($"{GetTree(2, false)}Class: {lineCode}");
-                            }
-                            if (lineState.LastLineWasComment)
-                            {
-                                NumberOfClassComments++;
-                                lineState.LastLineWasComment = false;
-                            }
-                            break;
-                        }
-                    }
-
-                    // is this a method ? its at the correct brace level. inside a class.
-                    if (lineState.OpenClassBrace == lineState.OpenBraceCount)
-                    {
-                        lineState.LastLineWasMethod = false;
-                        int j = lineCode.IndexOf('(');
-                        if (j > 0)
-                        {
-                            // this is a method and not a prop or field?
-                            int k = lineCode.IndexOfAny(_methodEx, 0, j); // Not a method if = or { appear before (
-                            if (k < 0)
-                            {
-                                lineState.LastLineWasMethod = true;
-                                NumberOfMethods++;
-                                if (Verbose || MakeTree)
-                                {
-                                    _con.WriteLine($"{GetTree(3, false)}Method: {lineCode}");
-                                }
-                                if (lineState.LastLineWasComment)
-                                {
-                                    NumberOfMethodComments++;
-                                    lineState.LastLineWasComment = false;
-                                }
-                            }
-                        }
-                    }
-                    else if (!lineCode.StartsWith("{"))
-                    {
-                        lineState.LastLineWasMethod = false;
-                    }
-
-                    lineState.LastLineWasComment = false;
+                    var lineState = new CsLineState();
+                    lines = lineState.ReadFile(this, rdr, fileRel, proj, isLast);
                 }
-            }
-
-            if (lineState.LineNumber == 0)
-            {
-                // Empty files dont count.
-                NumberOfFiles--;
-            }
-            if (lineState.OpenBraceCount != 0)
-            {
-                // What line is open brace ?? "#if" can mess this up.
-                _con.WriteLine($"{filePath.Substring(RootDir.Length)} has {lineState.OpenBraceCount} unmatched braces from {lineState.OpenBrace.Pop()}.");
-                NumberOfErrors++;
+                if (filePath.EndsWith(".cpp"))
+                {
+                    var lineState = new CppLineState();
+                    lines = lineState.ReadFile(this, rdr, fileRel, proj, isLast);
+                }
+                if (lines > 0)                   // Empty files don't count.
+                {
+                    NumberOfFiles++;
+                    NumberOfLines += lines;
+                }
             }
         }
 
-        public bool IsIgnore(string name)
+        private bool IsIgnoredDir(string name)
         {
-            foreach(string ignored in Ignore)
+            // Do we ignore this directory ?
+            if (string.IsNullOrWhiteSpace(name))
+                return true;
+            if (name.StartsWith("."))
+                return true;
+            if (kDirsIgnore.Contains(name))
+                return true;
+            foreach (string ignored in Ignore)
             {
                 if (Regex.IsMatch(name, ignored))
                 {
@@ -347,64 +243,54 @@ namespace CodeCounter
 
         public void ReadDir(string dirPath, bool isLast, ProjectReference proj = null)
         {
-            // Recursive dir reader.
+            // Recursive directory reader.
 
             var d = new DirectoryInfo(dirPath);     //  Assuming Test is your Folder
 
-            if (IsIgnore(d.Name))
+            // Process all the files first.
+            // Ignore system/hidden files. e.g. Thumb.db 
+
+            var files = d.GetFiles("*.*")
+                .Where(x => !x.Attributes.HasFlag(FileAttributes.Hidden) || !x.Attributes.HasFlag(FileAttributes.System))
+                .Where(x => kExtsAll.Contains(x.Extension))
+                .ToList();
+
+            if ((this.Verbose || MakeTree) && files.Count > 0)
             {
-                return;
+                _con.WriteLine($"{GetTree(0, isLast)}Dir: {dirPath.Substring(RootDir.Length)}");
             }
 
-            bool showDir = false;   // only show dir if it has files.
+            // Get project info first.
             ProjectReference projDef = null;      // only one per directory.
-
-            // deal with files first.
-            // System.IO.IOException: 'The directory name is invalid.' = this was a file name not a dir name ?
-
-            int filesProcessed = 0;
-            int filesInDir = 0;
-
-            // Getting all files.  e.g. NOT Thumb.db 
-            var Files = d.GetFiles("*.*")
-                .Where(file => !file.Attributes.HasFlag(FileAttributes.Hidden) || !file.Attributes.HasFlag(FileAttributes.System))
-                .Where(file => _exts.Contains( Path.GetExtension(file.Name)))
-                .ToList(); 
-
-            foreach (FileInfo file in Files)
+            var filesProj = files.Where(x => kExtsProj.Contains(x.Extension)).ToList();
+            foreach (FileInfo file in filesProj)
             {
-                filesProcessed++;
-
-                if (file.Name.EndsWith(".csproj"))
+                // Multi projects in the same directory count as the same project.
+                if (projDef == null)
                 {
-                    // Multi projects in the same dir count as the same project.
-                    if (projDef == null)
-                    {
-                        NumberOfProjects++;
-                        proj = projDef = NameSpaces.AddProjectFile(dirPath, file.Name);
-                    }
-                    continue;
+                    NumberOfProjects++;
+                    proj = projDef = NameSpaces.AddProjectFile(dirPath, file.Name);
                 }
-
-                if ((this.Verbose || MakeTree ) && !showDir)
-                {
-                    _con.WriteLine($"{GetTree(0, isLast)}Dir: {dirPath.Substring(RootDir.Length)}");
-                    showDir = true;
-                }
-
-                filesInDir++;
-                ReadFile(file.FullName, proj, filesProcessed >= Files.Count);
             }
 
-            if (filesInDir > 0)
+            var filesSrc = files.Where(x => kExtsSrc.Contains(x.Extension)).ToList();
+            int filesProcessed = 0;
+            foreach (FileInfo file in filesSrc)
+            {
+                ReadSrcFile(file.FullName, proj, filesProcessed >= files.Count);
+            }
+
+            if (files.Count > 0)
             {
                 NumberOfDirectories++;
             }
 
-            // Recurse into dirs. // NOT excluded dir. NOT hidden
+            // Recurse into directories. // NOT hidden/excluded directories. 
             int dirsProcessed = 0;
 
-            var dirs = d.GetDirectories().Where(dir =>!_dirsEx.Contains(dir.Name) && !dir.Name.StartsWith(".")).ToList();
+            var dirs = d.GetDirectories()
+                .Where(x => !IsIgnoredDir(x.Name))
+                .ToList();
             foreach (var dir in dirs)
             {
                 dirsProcessed++;

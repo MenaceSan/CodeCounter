@@ -38,22 +38,24 @@ namespace CodeCounter
                 {
                     Console.WriteLine("CodeCounter walks a directory of .cs sources and compiles some statistics.");
                     Console.WriteLine("Use: CodeCounter -flag directory directory2 ...");
-                    Console.WriteLine("-verbose : show methods.");
+                    Console.WriteLine("-graph0 : list the modules to output.");
+                    Console.WriteLine("-ignore XX: Ignore all directories that match this regex pattern. e.g. (Test= all directories with the word Test in it)");
                     Console.WriteLine("-tree : display methods and names as tree.");
-                    // Console.WriteLine("-graph0 : list the modules to output.");
-                    // Console.WriteLine("-graph Name : output the modules list to a graphviz file by name.");
+                    Console.WriteLine("-unprefix XX: remove prefix from names.");
+                    Console.WriteLine("-verbose : show methods.");
                     Console.WriteLine("-wait : pause at the end.");
 
-                    // -ignore xx // ignore top level modules with this name pattern
-                    // -licenses
+                    // TODO
+                    // Console.WriteLine("-graph Name : output the modules list to a graphviz file by name.");
+                    // -licenses : list of licenses included with libraries and packages.
                     // -showlibs (local and nuget)
 
                     return;
                 }
 
-                if (argL == "-wait")
+                if (argL == "-graph0")
                 {
-                    waitOnDone = true;
+                    stats.Graph0 = true;
                     continue;
                 }
 
@@ -63,21 +65,27 @@ namespace CodeCounter
                     continue;
                 }
 
-                if (argL == "-graph0")
-                {
-                    stats.Graph0 = true;
-                    continue;
-                }
-
                 if (argL == "-tree")
                 {
                     stats.MakeTree = true;
                     continue;
                 }
 
+                if (argL == "-unprefix")
+                {
+                    stats.Unprefix = args[++argN];
+                    continue;
+                }
+
                 if (argL == "-verbose")
                 {
                     stats.Verbose = true;
+                    continue;
+                }
+
+                if (argL == "-wait")
+                {
+                    waitOnDone = true;
                     continue;
                 }
 
@@ -101,7 +109,7 @@ namespace CodeCounter
             foreach (string root in roots)
             {
                 dirsProcessed++;
-                Console.WriteLine($"Read Dir '{root}' for files of type {String.Join(",", CodeStats._exts)}");
+                Console.WriteLine($"Read Dir '{root}' for files of type {String.Join(",", CodeStats.kExtsAll)}");
                 stats.RootDir = root;
                 stats.ReadDir(root, dirsProcessed >= roots.Count);
             }
