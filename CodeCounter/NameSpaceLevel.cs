@@ -11,12 +11,12 @@ namespace CodeCounter
     /// </summary>
     public class NameSpaceLevel
     {     
-        public readonly string Name;     // segment/level name.
+        public readonly string Name;     // segment/level name in a namespace.
 
         public readonly NameSpaceLevel Parent;
         private readonly SortedList<string, NameSpaceLevel> Children;
 
-        public ProjectReference Project;    // What project defines this. Ideally there should only be 1 !!
+        public ProjectReference Project;    // What project defines this. Ideally there should only be 1 !! but allow multiple.
 
         public NameSpaceLevel(string name, NameSpaceLevel parent)
         {

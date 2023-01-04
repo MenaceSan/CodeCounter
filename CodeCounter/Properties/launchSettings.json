@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "CodeCounter": {
+      "commandName": "Project",
+      "commandLineArgs": "-tree -graph2 C:\\git\\UDCCore_Bare"
+    }
+  }
+}

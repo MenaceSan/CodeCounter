@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "CodeCounter": {
+      "commandName": "Project",
+      "commandLineArgs": "-wait -v C:\\Dennis\\Source\\Gray\\GrayCore"
+    }
+  }
+}

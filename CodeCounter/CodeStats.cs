@@ -2,6 +2,7 @@
 // Copyright (c) 2020 Dennis Robinson (www.menasoft.com). All rights reserved.  
 // Licensed under the MIT License. See ReadMe.md file in the project root for full license information.  
 // 
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
@@ -12,7 +13,7 @@ namespace CodeCounter
 {
     public class CodeStatsProject
     {
-        // Stats for a single Project
+        // Capture Stats for a single Project
 
         [Description("Number of dirs with files. Ignore empty dirs.")]
         public int NumberOfDirectories = 0;
@@ -75,21 +76,10 @@ namespace CodeCounter
         }
     }
 
-    public class CodeClass
-    {
-        public readonly string Name;
-        public readonly List<string> Methods = new List<string>();
-
-        public CodeClass(string name)
-        {
-            Name = name;
-        }
-    }
-
     // This is a comment prefixing the class. Leave it here as an internal test for comment counting.
     public class CodeStats : CodeStatsProject
     {
-        // Gather stats on a bunch of .cs files.
+        // Gather stats on a bunch of files.
         // similar to :
         //  https://www.ndepend.com/sample-reports/
 
@@ -97,87 +87,94 @@ namespace CodeCounter
         public int NumberOfProjects = 0;
 
         internal string RootDir;            // read everything under here.
-        private readonly TextWriter _con;            // Console for Verbose messages and errors.
+        internal TextWriter Out;            // Console for Verbose messages and errors.
 
-        internal bool Verbose = false;         // Print the class/methods i find.
-        internal bool MakeTree = false;     // Output a tree of Dir/File/Class/Methods.
-        internal bool Graph0 = false;       // Build the GraphViz markup.
-        internal string Unprefix;           // strip this prefix from names. TODO
+        public bool Verbose = false;      // Print the class/methods i find.
+        public bool MakeTree = false;     // Output a tree of Dir/File/Class/Methods.
+        public int GraphLevel = 0;        // Build the GraphViz markup. 0=none, 1=immediate, 2=libraries, 3= 2nd level libraries.
 
-        internal readonly List<string> Ignore = new List<string>();     // ignore these dirs by name.
-        internal readonly NameSpaces NameSpaces;
+        public readonly List<string> Ignore = new List<string>();     // ignore these dirs by name.
+        public readonly NameSpaces NameSpaces = new NameSpaces();
 
-        public static readonly string[] kExtsAll = { ".cs", ".csproj" };     // what file types do we read? , ".cpp", ".vcxproj"
-        public static readonly string[] kExtsProj = { ".csproj" };     // what project file types do we read? , ".vcxproj" 
-        public static readonly string[] kExtsSrc = { ".cs" };     // what source file types do we read? , ".cpp" 
+        public static readonly string[] kExtsAll = { CsReader.kExtSrc, CsReader.kExtProj, CppReader.kExtSrc, CppReader.kExtProj };     // what file types do we read? 
+
+        public static readonly string[] kExtsProj = { CsReader.kExtProj, CppReader.kExtProj };     // what project file types do we read?  
+        public static readonly string[] kExtsSrc = { CsReader.kExtSrc, CppReader.kExtSrc };     // what source file types do we read? 
 
         public static readonly string[] kDirsIgnore = { "bin", "obj", "packages" };     // exclude these.
 
-        public CodeStats(TextWriter con)
+        public bool IsReadingClasses => (Verbose || MakeTree || GraphLevel > 0); // inspect classes ?
+
+        public CodeStats(TextWriter conOut)
         {
-            _con = con;
-            NameSpaces = new NameSpaces();
+            Out = conOut;
         }
 
         public void DumpStats()
         {
             // dump all stats.
-            _con.WriteLine($"{nameof(NumberOfProjects)} = {NumberOfProjects}");
-            base.DumpStats(_con);
+            Out.WriteLine($"{nameof(NumberOfProjects)} = {NumberOfProjects}");
+            base.DumpStats(Out);
         }
 
-        private int _TreeLastMask = 0;
-        private string GetTree(int level, bool isLast)
+        private int _TreeLastMask = 0;  // bit mask.
+        private string GetTree(int level, bool isLastFile)
         {
             if (!this.MakeTree)
                 return "";
             if (level == 0)     // directories.
                 return "";
             level--;
-            if (isLast)
-                _TreeLastMask |= (1 << level);        // set this.
+
+            int mask = CodeUtil.BitMask(level);
+            if (isLastFile)
+                _TreeLastMask |= mask;        // set this.
             else
-                _TreeLastMask &= ~(1 << level);        // clear this.
+                _TreeLastMask &= ~mask;        // clear this = Not last.
 
             string prefix = "";
             for (int j = 0; j < level; j++)
             {
-                prefix += ((_TreeLastMask & (1 << j)) == 0) ? "│" : " ";
+                prefix += CodeUtil.IsBit(_TreeLastMask, j) ? " " : "│";
             }
 
-            prefix += ((_TreeLastMask & (1 << level)) == 0) ? "├ " : "└ ";
+            prefix += CodeUtil.IsBit(_TreeLastMask, level) ? "└ " : "├ ";
             return prefix;
         }
 
         public void DumpClasses(List<CodeClass> classes)
         {
             // assume Verbose || MakeTree
-            if (classes == null)
+            if (classes == null || !Verbose)
                 return;
             int i = 0;
             foreach (var class1 in classes)
             {
                 i++;
-                _con.WriteLine($"{GetTree(2, i == classes.Count)}Class: {class1.Name}");
+                Out.WriteLine($"{GetTree(2, i == classes.Count)}Class: {class1.Name}");
                 int j = 0;
                 foreach (string method in class1.Methods)
                 {
                     j++;
-                    _con.WriteLine($"{GetTree(3, j == class1.Methods.Count)}Method: {method}");
+                    Out.WriteLine($"{GetTree(3, j == class1.Methods.Count)}Method: {method}");
                 }
             }
         }
 
-        public void DumpFile(string name, bool isLast, List<string> errors)
+        public void DumpSrcFile(string name, bool isLastFile, List<string> errors)
         {
+            // Info about the src file.
             if (Verbose || MakeTree)
             {
-                _con.WriteLine($"{GetTree(1, isLast)}File: {name}");
+                Out.WriteLine($"{GetTree(1, isLastFile)}File: {name}");
             }
-            foreach (string err in errors)
+            if (errors != null)
             {
-                NumberOfErrors++;
-                _con.WriteLine($"Error: {err}");
+                foreach (string err in errors)
+                {
+                    Out.WriteLine($"Error: {err}");
+                    NumberOfErrors++;
+                }
             }
         }
 
@@ -185,11 +182,43 @@ namespace CodeCounter
         public void OnReadLine(int numberOfChars)
         {
             NumberOfChars += numberOfChars;
-
-            if (!Verbose && NumberOfChars - _NumberOfCharsMsg > 16 * 1024 * 1024)
+            if (Verbose)    // dont mess up the output if we are Verbose.
+                return;
+            if (Out != Console.Out) // dont mess up output file ??
+                return;
+            if (NumberOfChars - _NumberOfCharsMsg > 16 * 1024 * 1024)
             {
-                _con.WriteLine(".");    // tick to show we are alive.
+                Out.WriteLine(".");    // tick to show we are alive. console.
                 _NumberOfCharsMsg = NumberOfChars;
+            }
+        }
+
+        public bool OnCountLine(CodeReader line)
+        {
+            if (line.HasCode && line.HasCommentText)
+            {
+                NumberOfLinesCodeAndComment++;
+                return true;
+            }
+            else if (line.HasCommentText)
+            {
+                NumberOfCommentLines++;
+                return true;
+            }
+            else if (line.HasCode)
+            {
+                NumberOfLinesCode++;
+                return true;
+            }
+            else if (line.HasComment)
+            {
+                NumberOfCommentBlank++;
+                return false;
+            }
+            else
+            {
+                NumberOfLinesBlank++;     // Has no comment or anything.
+                return false;
             }
         }
 
@@ -198,21 +227,21 @@ namespace CodeCounter
         /// </summary>
         /// <param name="filePath">The filename to count.</param>
         /// <returns>The number of lines in the file.</returns>  
-        private void ReadSrcFile(string filePath, ProjectReference proj, bool isLast)
+        private void ReadSrcFile(string filePath, ProjectReference proj, bool isLastFile)
         {
             using (var rdr = new StreamReader(filePath))
             {
-                string fileRel = filePath.Substring(RootDir.Length);
+                string fileRel = filePath.Substring(RootDir.Length + 1);
                 int lines = 0;
-                if (filePath.EndsWith(".cs"))
+                if (filePath.EndsWith(CsReader.kExtSrc))
                 {
-                    var lineState = new CsLineState();
-                    lines = lineState.ReadFile(this, rdr, fileRel, proj, isLast);
+                    var lineState = new CsReader();
+                    lines = lineState.ReadFile(this, rdr, fileRel, proj, isLastFile);
                 }
-                if (filePath.EndsWith(".cpp"))
+                if (filePath.EndsWith(CppReader.kExtSrc))
                 {
-                    var lineState = new CppLineState();
-                    lines = lineState.ReadFile(this, rdr, fileRel, proj, isLast);
+                    var lineState = new CppReader();
+                    lines = lineState.ReadFile(this, rdr, fileRel, proj, isLastFile);
                 }
                 if (lines > 0)                   // Empty files don't count.
                 {
@@ -241,7 +270,7 @@ namespace CodeCounter
             return false;
         }
 
-        public void ReadDir(string dirPath, bool isLast, ProjectReference proj = null)
+        public void ReadDir2(string dirPath, bool isLastFile, ref ProjectReference proj)
         {
             // Recursive directory reader.
 
@@ -257,27 +286,30 @@ namespace CodeCounter
 
             if ((this.Verbose || MakeTree) && files.Count > 0)
             {
-                _con.WriteLine($"{GetTree(0, isLast)}Dir: {dirPath.Substring(RootDir.Length)}");
+                Out.WriteLine($"{GetTree(0, isLastFile)}Dir: {dirPath.Substring(RootDir.Length)}");
             }
 
             // Get project info first.
-            ProjectReference projDef = null;      // only one per directory.
-            var filesProj = files.Where(x => kExtsProj.Contains(x.Extension)).ToList();
+            // Reverse() = Take the last file. Assume higher number version is best.
+            var filesProj = files.Where(x => kExtsProj.Contains(x.Extension)).Reverse().ToList();
+            ProjectReference proj2 = proj;
             foreach (FileInfo file in filesProj)
             {
-                // Multi projects in the same directory count as the same project.
-                if (projDef == null)
-                {
-                    NumberOfProjects++;
-                    proj = projDef = NameSpaces.AddProjectFile(dirPath, file.Name);
-                }
+                proj2 = NameSpaces.AddProjectRef(file.FullName, false);
+                NumberOfProjects++;
+                break;      // Multi projects in the same directory count as the same project.
+            }
+
+            if (proj != null && proj2 != null)
+            {
+                // treat this like a child (separate) project.
             }
 
             var filesSrc = files.Where(x => kExtsSrc.Contains(x.Extension)).ToList();
             int filesProcessed = 0;
             foreach (FileInfo file in filesSrc)
             {
-                ReadSrcFile(file.FullName, proj, filesProcessed >= files.Count);
+                ReadSrcFile(file.FullName, proj2, filesProcessed >= files.Count);
             }
 
             if (files.Count > 0)
@@ -294,8 +326,22 @@ namespace CodeCounter
             foreach (var dir in dirs)
             {
                 dirsProcessed++;
-                ReadDir(dir.FullName, dirsProcessed >= dirs.Count, proj);
+                ReadDir2(dir.FullName, dirsProcessed >= dirs.Count, ref proj2);
+            }
+
+            if (proj == null)
+            {
+                proj = proj2;
             }
         }
+
+        public void ReadRoot(string dirPath, bool isLastFile = true)
+        {
+            // ProjectReference proj
+            this.RootDir = dirPath;
+            ProjectReference proj = null;
+            this.ReadDir2(dirPath, isLastFile, ref proj);
+        }
+
     }
 }

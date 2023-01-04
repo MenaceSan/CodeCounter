@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <StartupObject>CodeCounter.Program</StartupObject>
+    <Version>1.5.0</Version>
+    <Authors>Dennis Robinson</Authors>
+    <Company>Menasoft</Company>
+    <Copyright>Menasoft © 2020</Copyright>
+    <PackageProjectUrl>https://www.menasoft.com</PackageProjectUrl>
+    <RepositoryType>GitHub</RepositoryType>
+    <RepositoryUrl>https://github.com/MenaceSan/CodeCounter</RepositoryUrl>
+    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+    <PackageIcon>CodeCounter.png</PackageIcon>
+    <ApplicationIcon>CodeCounter.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="PackageIgnore.ini" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="PackageIgnore.ini">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="CodeCounter.png">
+      <Pack>True</Pack>
+      <PackagePath></PackagePath>
+    </None>
+  </ItemGroup>
+ 
+
+</Project>

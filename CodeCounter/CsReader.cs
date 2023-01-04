@@ -2,44 +2,46 @@
 // Copyright (c) 2020 Dennis Robinson (www.menasoft.com). All rights reserved.  
 // Licensed under the MIT License. See ReadMe.md file in the project root for full license information.  
 // 
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 
 namespace CodeCounter
 {
+    public enum CsMode
+    {
+        //  TODO what is our current reading state at a location in the file. (may be nested)
+
+        InFile, // look for namespace, class, struct, enum, interface, etc,
+        ClassDecl,  // We are declaring a class,struct, lok for { or ;
+        InClass,        // look for methods etc inslide class, struct. (may be nested)
+        MethodDecl,  // we are declaring a method. look for { or ;
+        InMethod,       // We can make calls etc, inside the body of a method. 
+        InBrace,        // brace in method.
+        InComment,    // inside a line spanning comment /* XX */
+        InQuote,        // inside a line spanning quote.  @"\n" can span lines.
+    }
+
     /// <summary>
     /// The state (of a line) inside a single .cs source file.
+    /// TODO deal with pre-processed code comments.
     /// </summary>
-    internal class CsLineState
+    internal class CsReader : CodeReader
     {
-        public int LineNumber = 0;      // 1 based.
-        public bool LastLineWasClass = false;   // last line was a class.
-        public bool LastLineWasMethod = false;   // last line was a method
+        public const string kExtSrc = ".cs";
+        public const string kExtProj = ".csproj";
+
+        public bool LastLineWasClass = false;   // last line was a class. for comment recording.
+        public bool LastLineWasMethod = false;   // last line was a method. for comment recording.
         public bool LastLineWasComment = false;  // last line was a comment
 
-        public int OpenCommentLine = 0;    // Part of multi line /* comment */ . Can span lines.
+        public Stack<CodeMarker> MarkerStack = new Stack<CodeMarker>();   // What line was open brace on ?
+        public int OpenBraceCount => MarkerStack.Count;
+        public int OpenClassBrace = 0;      // inside a class.  OpenBraceCount depth at open.
+        public int OpenMethodDecl = 0;       // line number for method declaration.
+        public int OpenCommentLine = 0;    // Part of multi line /* comment */ . Can span lines. 1 based.
         public bool OpenAtQuote = false;        // @"\n" can span lines.
 
-        public Stack OpenBrace = new Stack();   // What line int was open brace on ?
-        public int OpenBraceCount { get { return OpenBrace.Count; } }
-        public int OpenClassBrace = 0;      // inside a class. make this a stack ? OpenBraceCount
-        public int MaxBraceCount = 0;       // Max we see.
-
-        public bool HasCode;            // not a comment. looks like code. (maybe @quoted string = whole line)
-        public bool HasComment;         // possibly empty comment. 
-        public bool HasCommentText;     // text in comment.
-        public bool HasCommentCode;     // looks like commented out code (junk text). This doesn't count as a real/useful comment.
-        public string Error = "";       // some sort of syntax error.
-
-        public void ClearLine()
-        {
-            HasCode = false;
-            HasComment = false;
-            HasCommentText = false;
-            HasCommentCode = false;
-            Error = "";
-        }
+        public int MaxBraceCount = 0;       // Max we saw in this file.
 
         private static bool IsSpecial(string line, int j, char ch = '\\')
         {
@@ -76,7 +78,7 @@ namespace CodeCounter
                         // this is legal. // OpenAtQuote can span lines ! 
                         return -1;
                     }
-                    Error += "Missing End Quote, "; // NumberOfErrors // weird NO CLOSE ??
+                    AddError("No close quote");
                     return -1;
                 }
 
@@ -106,23 +108,25 @@ namespace CodeCounter
 This is a test of a multi line constant string used for self testing.
 ";
 
-        public string ReadLine(string line)
+        public string ProcessLine(string line)
         {
-            // return line minus any comments.
+            // return a single command on the line minus any comments.
+            // assume ClearLine() was called before this.
+            // TODO: CS allows multiple commands on a line. we should deal with this better !!!
 
             line = line.Trim();
             if (line.Length == 0)
             {
-                return line;    // empty / complete line.
+                return string.Empty;    // empty . nothing here.
             }
 
-            if (OpenAtQuote)    // look for closing quote from line spanning quote. "
+            if (OpenAtQuote)    // look for closing quote from an open line spanning quote. "
             {
                 int i = FindQuoteEnd(line, -1);
                 if (i < 0)
                 {
                     HasCode = true;  // consider this a blank code line.
-                    return "";
+                    return string.Empty;
                 }
                 i++;
                 line = line.Substring(i, line.Length - i); // get after quote
@@ -146,7 +150,7 @@ This is a test of a multi line constant string used for self testing.
                 }
 
                 OpenCommentLine = 0;    // comment closed.
-                return ReadLine(line.Substring(i + 2));
+                return ProcessLine(line.Substring(i + 2));
             }
 
             if (line.StartsWith(@"//"))     // line comment
@@ -160,10 +164,10 @@ This is a test of a multi line constant string used for self testing.
             {
                 // HasComment is not true unless there is text in this case.
                 OpenCommentLine = LineNumber;
-                return ReadLine(line.Substring(2));
+                return ProcessLine(line.Substring(2));
             }
 
-            HasCode = true;
+            HasCode = true;     // this is C# code of some sort.
 
             for (int i = 0; i < line.Length; i++)
             {
@@ -182,7 +186,7 @@ This is a test of a multi line constant string used for self testing.
                     int j = line.IndexOf('\'', i + 1);
                     if (j < 0)  // weird NO CLOSE ??
                     {
-                        Error += "No close of single quote, "; // NumberOfErrors
+                        AddError("No close of single quote");
                         break;
                     }
                     if (IsSpecial(line, j))
@@ -193,7 +197,7 @@ This is a test of a multi line constant string used for self testing.
 
                 if (ch == '{')
                 {
-                    OpenBrace.Push(LineNumber);
+                    MarkerStack.Push(new CodeMarker(LineNumber, i));
                     if (OpenBraceCount > MaxBraceCount)
                         MaxBraceCount = OpenBraceCount;
                     continue;
@@ -208,10 +212,10 @@ This is a test of a multi line constant string used for self testing.
                     {
                         // No close brace. Error!
                         // Console.WriteLine($"{fileRel} has {lineState.OpenBraceCount} unmatched braces from {lineState.OpenBrace.Pop()}.");
-                        Error += "No close of brace, ";
+                        AddError("No close of brace");
                         break;
                     }
-                    OpenBrace.Pop();
+                    MarkerStack.Pop();
                     continue;
                 }
 
@@ -231,7 +235,7 @@ This is a test of a multi line constant string used for self testing.
                     {
                         HasComment = true;
                         OpenCommentLine = LineNumber;
-                        return line.Substring(0, i).TrimEnd() + ReadLine(line.Substring(i + 2));    // trim out comment.
+                        return line.Substring(0, i).TrimEnd() + ProcessLine(line.Substring(i + 2));    // trim out comment.
                     }
                 }
             }
@@ -240,29 +244,31 @@ This is a test of a multi line constant string used for self testing.
         }
 
         public static readonly string[] kClassTypes = { "class", "enum", "struct", "interface" };
-        public static readonly char[] kMethodEx = { '=', '{' };
+        public static readonly char[] kMethodEx = { '=', '{', ';' };
+        public static readonly char[] kMethodDef = { '{', ';' };
 
-        public int ReadFile(CodeStats stats, StreamReader rdr, string fileRel, ProjectReference proj, bool isLast)
+        public int ReadFile(CodeStats stats, StreamReader rdr, string fileRel, ProjectReference proj, bool isLastFile)
         {
-            // isLast = is Last File in Dir.
+            // isLastFile = is Last File in Dir.
 
             if (fileRel.EndsWith("AssemblyInfo.cs"))  // always ignore this file for comment counting purposes.
                 return 0;
 
-            var errors = new List<string>();
-            var classes = (stats.Verbose || stats.MakeTree) ? new List<CodeClass>() : null;
-            CodeClass class0 = null;  // All the methods for the last class.
+            CodeClass class0 = null;  // All the methods for the current class we are reading.
 
             bool hasCode = false;   // found some code in the file.
-            string lineRaw;
-            while ((lineRaw = rdr.ReadLine()) != null)
+            while (true)
             {
+                string lineRaw = rdr.ReadLine();
+                if (lineRaw == null)
+                    break;
+
                 this.LineNumber++;
                 stats.OnReadLine(lineRaw.Length);
 
                 if (!hasCode && lineRaw.Contains("<auto-generated"))   // ignore this whole file.
                 {
-                    stats.DumpFile($"{fileRel} (Auto Generated)", isLast, errors);
+                    stats.DumpSrcFile($"{fileRel} (Auto Generated)", isLastFile, Errors);
                     return 0;   // Dont count this. // Comment total lines might be off now??
                 }
 
@@ -274,7 +280,18 @@ This is a test of a multi line constant string used for self testing.
                 }
 
                 this.ClearLine();
-                string lineCode = this.ReadLine(lineRaw);
+                string lineCode = this.ProcessLine(lineRaw);       // process line. strip comments.
+
+                if (OpenMethodDecl > 0)
+                {
+                    // Method Param defs that can span several lines.
+                    // find an opening { or ;
+                    int k = lineCode.IndexOfAny(kMethodDef, 0); //  look for { or ;
+                    if (k < 0)
+                        continue;
+                    this.OpenMethodDecl = 0;
+                    lineCode = lineCode.Substring(0, k + 1);
+                }
 
                 if (lineCode.StartsWith(NameSpaces.kUsingDecl))
                 {
@@ -285,38 +302,13 @@ This is a test of a multi line constant string used for self testing.
                     string err = stats.NameSpaces.AddNameSpaceDecl(proj, lineCode.Substring(NameSpaces.kNameSpaceDecl.Length));
                     if (!string.IsNullOrEmpty(err))
                     {
-                        errors.Add($"'{err}' at {fileRel}:{this.LineNumber}");
+                        AddError(err);
                     }
                 }
 
-                if (!string.IsNullOrEmpty(this.Error))
-                {
-                    errors.Add($"'{this.Error}' at {fileRel}:{this.LineNumber}");
-                }
-                if (this.HasCode && this.HasCommentText)
-                {
-                    hasCode = true;
-                    stats.NumberOfLinesCodeAndComment++;
-                }
-                else if (this.HasCommentText)
-                {
-                    stats.NumberOfCommentLines++;
-                }
-                else if (this.HasCode)
-                {
-                    hasCode = true;
-                    stats.NumberOfLinesCode++;
-                }
-                else if (this.HasComment)
-                {
-                    stats.NumberOfCommentBlank++;
+                hasCode |= this.HasCode;
+                if (!stats.OnCountLine(this))
                     continue;
-                }
-                else
-                {
-                    stats.NumberOfLinesBlank++;
-                    continue;
-                }
 
                 if (this.HasCommentText && !this.HasCode)
                 {
@@ -339,7 +331,7 @@ This is a test of a multi line constant string used for self testing.
                     continue;
 
                 // Is this a class ?
-                if (!lineCode.StartsWith("{"))
+                if (!lineCode.StartsWith("{") && this.LastLineWasClass)
                 {
                     this.LastLineWasClass = false;
                 }
@@ -372,13 +364,11 @@ This is a test of a multi line constant string used for self testing.
                         this.OpenClassBrace = this.OpenBraceCount + 1;
                     }
                     this.LastLineWasClass = true;
-                    stats.NumberOfClasses++;
-                    if (classes != null)
+                    stats.NumberOfClasses++;    // found a new class.
+
+                    if (stats.IsReadingClasses)
                     {
-                        if (class0 != null)
-                        {
-                            classes.Add(class0);
-                        }
+                        proj.AddClass(class0);
                         class0 = new CodeClass(lineCode);
                     }
                     if (this.LastLineWasComment)
@@ -389,26 +379,28 @@ This is a test of a multi line constant string used for self testing.
                     break;
                 }
 
-                // is this a method ? its at the correct brace level. inside a class.
+                // is this a method def ? its at the correct brace level. inside a class.
                 if (this.OpenClassBrace == this.OpenBraceCount)
                 {
                     this.LastLineWasMethod = false;
-                    int j = lineCode.IndexOf('(');
+                    int j = lineCode.IndexOf('('); // looks like a method decl.
                     if (j > 0)
                     {
-                        // TODO Handle the case where ": this()" follows a constructor !!!
-
                         // this is a method and not a prop or field?
-                        int k = lineCode.IndexOfAny(kMethodEx, 0, j); // Not a method if = or { appear before (
+                        int k = lineCode.IndexOfAny(kMethodEx, 0, j); // Not a method if = or { appear before the (
                         if (k < 0)
                         {
-                            this.LastLineWasMethod = true;  // This is really a method.
-                            stats.NumberOfMethods++;
-                            if (class0 != null)
+                            // This looks like a method def.
+                            k = lineCode.IndexOfAny(kMethodDef, j); //  look for { or ;
+                            if (k < 0)
                             {
-                                class0.Methods.Add(lineCode);
+                                this.OpenMethodDecl = this.LineNumber;   // look for end of multi line method def.
                             }
-                            if (this.LastLineWasComment)
+                            this.LastLineWasMethod = true;  // This is really a method. Must have an open brace or ; (for interface partial etc)
+                            stats.NumberOfMethods++;
+                            class0?.Methods.Add(lineCode);   // method sig.
+
+                            if (this.LastLineWasComment)    // had a comment prefix.
                             {
                                 stats.NumberOfMethodComments++;
                                 this.LastLineWasComment = false;
@@ -424,18 +416,24 @@ This is a test of a multi line constant string used for self testing.
                 this.LastLineWasComment = false;
             }
 
+            if (this.OpenCommentLine != 0)
+            {
+                AddError($"incomplete comment opened on line {this.OpenCommentLine}.");
+            }
+            if (this.OpenMethodDecl != 0)
+            {
+                AddError($"incomplete method opened on line {this.OpenMethodDecl}.");
+            }
             if (this.OpenBraceCount != 0)
             {
                 // What line is open brace ?? "#if" can mess this up.
-                errors.Add($"{fileRel} has {this.OpenBraceCount} unmatched braces from {this.OpenBrace.Pop()}.");
-            }
-            if (class0 != null)
-            {
-                classes.Add(class0);
+                AddError($"{this.OpenBraceCount} unmatched braces from line {this.MarkerStack.Pop().LineNumber}.");
             }
 
-            stats.DumpFile(fileRel, isLast, errors);
-            stats.DumpClasses(classes);
+            proj.AddClass(class0);
+
+            stats.DumpSrcFile(fileRel, isLastFile, Errors);
+            stats.DumpClasses(proj.Classes);
             return this.LineNumber;
         }
     }
